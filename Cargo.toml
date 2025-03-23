@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
+inquire = "0.7.5"
 rust-uuu = { path = "../rust-uuu" }
