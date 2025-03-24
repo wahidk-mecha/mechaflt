@@ -1,29 +1,11 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use inquire::{
-    Text,
+    Confirm, Text,
     ui::{RenderConfig, Styled},
 };
+use mechaflt::cli::{Cli, Commands};
+use mechaflt::script::Script;
 use rust_uuu;
-
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// List connected USB devices
-    Devices,
-    /// Flash an image to a device
-    Flash {
-        /// Path to the image to flash
-        image: String,
-    },
-    /// Interactive shell
-    Shell,
-}
 
 fn main() {
     let render_config = get_render_config();
@@ -32,14 +14,62 @@ fn main() {
 
     match &cli.command {
         Commands::Devices => {
-            rust_uuu::print_lsusb();
+            rust_uuu::print_devices();
         }
 
         Commands::Flash { image } => {
-            // TODO: Check if device is connected and image exists
-            // TODO: FLash the image
-            //get_usb_device_list();
-            todo!("Flashing is not yet implemented");
+            // Checck if the file exists
+            if !std::path::Path::new(image).exists() {
+                println!("{} does not exist.", image);
+                return;
+            }
+
+            // Setup prompts
+            let ans = Confirm::new("Is the device in SERIAL mode?")
+                .with_default(true)
+                .with_help_message(
+                    "Make sure to connect to the device's HOST USB port. Learn more [mecha.so/...]",
+                )
+                .prompt()
+                .unwrap();
+            if !ans {
+                println!("Please connect the device in SERIAL mode and try again.");
+                return;
+            }
+
+            println!("Searching for device...");
+            rust_uuu::print_devices();
+            let devices = rust_uuu::get_devices();
+            if devices.is_empty() {
+                return;
+            }
+
+            let ans =
+                Confirm::new(format!("Do you want to flash {} to the device?", image).as_str())
+                    .with_default(true)
+                    .prompt()
+                    .unwrap();
+            if !ans {
+                println!("Aborted.");
+                return;
+            }
+
+            println!("Flashing image...");
+
+            // Flash the image
+            let script = Script::default()
+                .with_image(image)
+                .with_bootloader("flash.bin");
+            let script_status = script.run();
+            match script_status {
+                Ok(()) => {
+                    println!("Script executed successfully");
+                }
+                Err(e) => {
+                    println!("Error: {}", e);
+                    println!("Script execution aborted.");
+                }
+            }
         }
 
         Commands::Shell => {
@@ -49,12 +79,17 @@ fn main() {
                 match cmd.as_str() {
                     "exit" | "quit" => break,
                     "" => {}
-                    _ => match rust_uuu::run_command(&cmd) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            eprintln!("Error: {}", e);
+                    _ => {
+                        let cmd_status = rust_uuu::run_command(&cmd);
+                        match cmd_status {
+                            Ok(()) => {
+                                println!("Command executed successfully");
+                            }
+                            Err(e) => {
+                                println!("Error: {}", e);
+                            }
                         }
-                    },
+                    }
                 }
             }
         }
